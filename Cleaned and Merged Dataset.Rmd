@@ -1,0 +1,206 @@
+---
+title: "project"
+author: "Aditya Thakur"
+date: "11/04/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*Loading packages:* <--- needs updating 
+
+Apart from the tidyverse package that we have discussed in class, there was 
+1 other package used for data wrangling: readxl. This package was important 
+as our data was in a .xlsx file and so this package was important for the 
+following data loading step. 
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(GGally)
+library(corrplot)
+library(leaps)
+```
+
+*First Dataset:*
+
+In this step, we loaded our primary dataset into R. This is an exhaustive 
+dataset, consisting of 378,576 rows and 65 columns. First and foremost, it was
+important to clean this data to select relevant information. 
+
+```{r}
+WDIEXCEL <- read_excel("data/WDIEXCEL 2.xlsx")
+
+```
+
+*Data Wrangling (first dataset):*
+
+As a group, we picked a list of econometrics which we believed would allow us to
+perform in-depth analysis. Our primary objective was to compare these metrics 
+in developed and developing countries. Conveniently, this dataset contained 
+2 values for the "Country Name" column which were: "Heavily indebted poor 
+countries (HIPC)" and "OECD members". Instead of aggregating statistics from a
+group of countries, we decided to use these previously created groups. 
+
+```{r}
+countries <-c("Heavily indebted poor countries (HIPC)","OECD members")
+```
+
+Next, we filtered the dataset to include only the metrics important to our 
+study.
+
+```{r}
+econ_var<-c("GDP per capita (current US$)",
+            "Gross domestic savings (current US$)",
+            "Government expenditure on education, total (% of GDP)",
+            "Profit tax (% of commercial profits)",
+            "GDP growth (annual %)",
+            "Foreign direct investment, net inflows (BoP, current US$)",
+            "Foreign direct investment, net outflows (BoP, current US$)",
+            "Unemployment, female (% of female labor force) 
+            (modeled ILO estimate)",
+            "Unemployment, male (% of male labor force) (modeled ILO estimate)")
+
+
+WDIEXCEL<-WDIEXCEL %>% 
+  filter(`Indicator Name` %in% econ_var,`Country Name` %in% countries)
+```
+
+*Missing Values:*
+
+Dealing with missing values was a challenge with this dataset. Removing all of 
+the missing values would compromise our analysis, since the missing values were 
+scattered throughout the data set, sometime spanning across many different year 
+and metrics. 
+
+Upon further observation of the dataset, one can see that there 
+are a few metrics where the majority of years contain empty measurements. For
+example, a metric such as Profit Tax has just 1 positive measurement, in year 
+2020. 
+
+Similarly, Government Expenditure on Education too has very few positive 
+values. Due to the large scale of missing values for these 2 groups, we decided
+to exclude these 2 metrics from our analysis. Any attempt to extrapolate current
+data to forecast for past years for these metrics would be highly unstable due
+to the large scale of missing values. 
+
+```{r}
+WDIEXCEL <- WDIEXCEL[-c(5, 7,13, 15), ]
+```
+
+*Second Dataset:*
+
+Our first dataset focused primarily on macroeconomic data pertaining to matters
+of Gross Domestic Product (GDP), Foreign Direct Investment (FDI) and 
+Unemployment among others. 
+
+In order to gain a more holistic view of the different circumstances in the 
+different sets fo countries, we decided to incorporate a dataset that focuses 
+on individual health; matters such as: Mortality Rate, Education and others. 
+
+We first imported the .xlsx file and similar to the first dataset, it was long 
+and exhaustive. We once again chose a list of covariates on which we could 
+filter the dataset.
+
+```{r}
+Health_data<-read_excel(
+  "data/Data_Extract_From_Health_Nutrition_and_Population_Statistics.xlsx")
+
+health_var<-c("Number of infant deaths",
+              "People using at least basic drinking water services 
+              (% of population)",
+              "Mortality rate, under-5 (per 1,000)",
+              "GNI per capita, Atlas method (current US$)",
+              "Rural population (% of total population)",
+              "School enrollment, primary (% gross)",
+              "Unemployment, male (% of male labor force)")
+
+Health_data<-Health_data %>% filter(`Series Name` %in% health_var)
+
+```
+
+Unlike the first dataset, the columns in this dataset were not easily 
+accessible. They were in a format which made accessing yearly data difficult. 
+In order to solve this, we used the column names from the first dataset (since
+the timespan for both datasets was identical) and copied it.
+
+```{r}
+colnames(Health_data)[5:65]<-c(colnames(WDIEXCEL)[5:65])
+```
+
+To make the 1st and 2nd dataset more accessible, we decided to use pivot_longer 
+and create a column for the years through which the dataset spans. We first 
+gathered all column names corresponding to the years (columns 5 to 65) and 
+then used the pivot_longer function:
+
+```{r}
+years<-c(colnames(WDIEXCEL)[5:65])
+
+WDIEXCEL<- WDIEXCEL %>% 
+  pivot_longer(years,names_to="year",values_to="count")
+Health_data<-Health_data %>% 
+  pivot_longer(years,names_to="year",values_to="count")
+```
+
+Furthermore, to make the process of combining both datasets simpler, we made
+sure all identical columns had identical names.
+
+```{r}
+colnames(Health_data)[which(names(Health_data)=="Series Name")] <- 
+  "Indicator Name"
+colnames(Health_data)[which(names(Health_data)=="Series Code")] <- 
+  "Indicator Code"
+```
+
+*Missing Values (timespan):*
+
+For the WDI dataset, we removed particular metrics due to a lack of sufficient 
+data. While there are some metrics that have comprehensive data, most do not 
+have sufficient measurements for years prior to 1990. This is a trend that is 
+noticable in both datasets. Therefore, we decided to limit our analysis to 
+1991-2019. 2020 was excluded due to the lack of data. 
+
+```{r}
+WDIEXCEL<-WDIEXCEL %>% filter(year>=1991)
+Health_data<-Health_data %>% filter(year>=1991)
+```
+
+*Combining datasets:*
+
+Finally, we wanted to combine both datasets.Since we wanted to keep all metrics 
+in both datasets, we used 'rbind'.
+
+```{r}
+econi<-rbind(WDIEXCEL,Health_data)
+econi<-econi %>% 
+  group_by(`year`) %>% 
+  summarize(`Indicator Name`,`Country Name`,count) %>% 
+  filter(!(year=="2020"))
+```
+
+*Cleaning and Transformation:*
+
+Now that we have 1 datasets containing the relevant countries and econometrics 
+spanning across years, we can now move on to the next step of transforming data 
+and getting ready for analysis. 
+
+```{r}
+econi
+#Modifying Columns
+econi$year<-as.Date(econi$year,format="%Y")
+econi$year<-year(ymd(econi$year))
+econi$count<-as.numeric(econi$count)
+econi
+
+econi_wide<-econi %>% 
+  group_by(`Indicator Name`) %>% 
+  mutate(row=row_number()) %>% 
+  pivot_wider(names_from = `Indicator Name`,values_from=count) %>% 
+  select(-c(row))
+```
+
+
+
